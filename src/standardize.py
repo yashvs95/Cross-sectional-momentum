@@ -79,7 +79,8 @@ def detect_format(cols):
 
 def standardize(path):
     """Takes as input a path to a bhavcopy record, then puts it in a standard format and deals with missing values"""
-    df = pd.read_csv(path, index_col = False)
+    # Strange pitfall here that NA is a series code used by NSE so we need to change what pandas views as a missing value
+    df = pd.read_csv(path, index_col = False, keep_default_na=False, na_values = [''])
     fmt = detect_format(df.columns)
 
     #Older bhavcopies have unnamed extra columns, checking them and dropping them
@@ -105,4 +106,28 @@ def standardize(path):
         df[col] = pd.to_numeric(df[col])
 
     return df[STANDARD_COLS]
-        
+
+
+def validate(df, tolerance = 0.005, e =0.006):
+    """ Checks a bhavcopy record for structural issues and bugs. A standardized copy of bhavcopy is to be passed here."""
+    # Strict checks
+    if df['date'].nunique() != 1:
+        raise ValueError(f'There are multiple ({df["date"].nunique()}) dates in this bhavcopy record')
+    duplicates = df.duplicated(subset = ['symbol', 'series', 'date'])
+    if duplicates.any():
+        raise ValueError('There are duplicate stock values in here')
+    if df[['date','symbol','series', 'close']].isna().any().any():
+        raise ValueError('Missing critical values for momentum calculation')
+
+    #Looser checks
+    #Upon inspection closing prices sometimes jiggled out of the low high range due to afterhours trading calculations that NSE does. added an epsilon (the number e in the function definition) to deal with this
+    bad = (
+            ~((df['low']*(1-e) <= df['close']) & (df['close'] <= df['high']*(1+e)))
+            |~((df['low'] <= df['open']) & (df['open'] <= df['high']))
+            |(df[['open', 'high', 'low', 'close']] <= 0).any(axis=1)
+            |(df[['volume', 'value']] < 0).any(axis=1)
+    )
+    error_rate = bad.mean()
+    if error_rate >= tolerance:
+        raise ValueError(f'{error_rate} of data points are bad surpassing our tolerance of {tolerance}')
+    return df[bad]
