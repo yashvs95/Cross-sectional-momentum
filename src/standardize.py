@@ -98,8 +98,11 @@ def standardize(path):
         if col not in df.columns:
             df[col] = pd.NA
     #Some clean up of data and formatting
-    df['date'] = pd.to_datetime(df['date'], format = DATE_FORMATS[fmt])
-
+    try:
+        df['date'] = pd.to_datetime(df['date'], format = DATE_FORMATS[fmt])
+    #there is a known file on 13 July 2020 that somehow used a 2 digit year format. the exception is mainly to handle that
+    except ValueError:
+        df['date'] = pd.to_datetime(df['date'], format = '%d-%b-%y')
     for col in ['symbol', 'series', 'isin']:
         df[col] = df[col].astype('string').str.strip()
     for col in ['open', 'high', 'low', 'close', 'last', 'prev_close', 'volume', 'value', 'trades']:
